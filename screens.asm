@@ -1,20 +1,7 @@
-; ============================================================
 ; screens.asm  -  start screen, end screen and live score
-; (tasks M3 and M4).  %included at the bottom of infinity.asm,
-; AFTER text.asm.  No org, no entry point.
-;
-; Needs (from Umer): fill_screen, fill_rect, draw_sprite,
-;                    stone_sprites, [score], [end_reason]
-; Needs (from text.asm): print_str, print_num, print_str_center
-; ES = A000h and DS = CS when these are called.
-; Every routine preserves all registers.
-; ============================================================
+; (tasks M3 and M4).  
 
 
-; ------------------------------------------------------------
-; draw_start_screen   (also callable as show_start_screen)
-;   No input.
-; ------------------------------------------------------------
 show_start_screen:
 draw_start_screen:
     push ax
@@ -24,18 +11,18 @@ draw_start_screen:
     push si
     push di
 
-    mov al, 1                   ; dark navy background
+    mov al, 1                   ; dark navy back
     call fill_screen
 
-    ; gold decorative lines above and below the title
+    
     mov al, 7
-    mov cx, 72                  ; x
-    mov dx, 32                  ; y (just above text row 5)
+    mov cx, 72                 
+    mov dx, 32                  
     mov si, 176                 ; width
-    mov di, 2                   ; height
+    mov di, 2                     ; height
     call fill_rect
     mov cx, 72
-    mov dx, 54                  ; y (just below text row 5)
+    mov dx, 54                 
     mov si, 176
     mov di, 2
     call fill_rect
@@ -52,7 +39,7 @@ draw_start_screen:
     mov bl, 12
     call print_str_center
 
-    ; rules, rows 10 / 12 / 14
+    ;  rows 10 / 12 / 14
     mov si, draw_start_screen_rule1
     mov dh, 10
     mov bl, 6                   ; white
@@ -230,3 +217,6 @@ draw_score_label: db 'SCORE:', 0
 draw_hud:
     call draw_score
     ret
+
+; Needs (from Umer): fill_screen, fill_rect, draw_sprite,
+;                    stone_sprites, [score], [end_reason]
