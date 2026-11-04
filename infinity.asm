@@ -611,5 +611,3 @@ put_char:                  ; AL = character
     ret
 
 time_label db 'TIME ',0
-	
-	%include "gear.asm"
