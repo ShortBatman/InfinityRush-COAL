@@ -11,7 +11,8 @@ COL_LAVA   equ 3
 COL_LAVA2  equ 4
 COL_GROUND equ 5
 COL_WHITE  equ 6
-
+spr_x   dw 0
+spr_col db 0
 state     db STATE_START
 tick      dw 0
 key_left  db 0
@@ -48,6 +49,7 @@ do_start:
     mov byte [key_enter],0
     mov byte [state],STATE_PLAY
     call draw_background
+	call draw_test_sprites
 	jmp main_loop
 
 do_play:
@@ -202,6 +204,13 @@ palette_data:
     db 42,20,62     ; 17 purple
     db 8,50,16      ; 18 green
     db 62,36,4      ; 19 orange
+	db 10,8,14      ; 20 outline
+    db 63,58,25     ; 21 light gold
+    db 35,60,63     ; 22 light cyan
+    db 52,54,58     ; 23 light grey
+    db 24,26,30     ; 24 dark grey
+    db 46,26,8      ; 25 light brown
+    db 63,34,34     ; 26 light red
 PALETTE_BYTES equ $-palette_data
 
 ; CX=x, DX=y, SI=width, DI=height, AL=colour
@@ -242,7 +251,7 @@ fill_row:
     pop ax
     ret
 	
-	draw_background:
+draw_background:
     xor cx,cx
     xor dx,dx
     mov si,320
@@ -266,3 +275,77 @@ fill_row:
     mov al,COL_GROUND
     call fill_rect         ; ground
     ret
+	
+	; SI=sprite (9 bytes), CX=x, DX=y. Colour 0 = transparent
+; SI=sprite (24x24 bytes), CX=x, DX=y. Colour 0 = transparent
+draw_sprite:
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push cx                ; save x
+    mov di,dx
+    mov cl,8
+    shl di,cl              ; y*256
+    mov cl,6
+    shl dx,cl              ; y*64
+    add di,dx              ; y*320
+    pop cx
+    add di,cx              ; + x
+    cld
+    mov bx,24              ; 24 rows
+sprite_row:
+    push di
+    mov cx,24              ; 24 pixels per row
+sprite_px:
+    lodsb
+    cmp al,0
+    je sprite_next         ; transparent, skip
+    mov [es:di],al
+sprite_next:
+    inc di
+    loop sprite_px
+    pop di
+    add di,320             ; next screen row
+    dec bx
+    jnz sprite_row
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+	
+erase_sprite:
+    push ax
+    push si
+    push di
+    mov si,24
+    mov di,24
+    mov al,COL_SKY
+    call fill_rect
+    pop di
+    pop si
+    pop ax
+    ret
+	
+	draw_test_sprites:
+    mov si,sprite_gauntlet
+    mov cx,40
+    mov dx,152
+    call draw_sprite
+    mov si,sprite_arc
+    mov cx,110
+    call draw_sprite
+    mov si,sprite_shield
+    mov cx,180
+    call draw_sprite
+    mov si,sprite_mjolnir
+    mov cx,250
+    call draw_sprite
+    ret
+	
+	%include "gear.asm"
