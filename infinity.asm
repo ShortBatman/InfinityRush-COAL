@@ -1,4 +1,4 @@
-org [0x0100]
+[org 0x0100]
 jmp start
 
 STATE_START equ 0
@@ -82,3 +82,81 @@ wait_loop:
     cmp ax,[tick]
     je wait_loop
     ret
+	
+	install_isrs:
+    push es
+    xor ax,ax
+    mov es,ax              ; ES = interrupt vector table
+    cli
+    mov ax,[es:8*4]
+    mov [old8],ax
+    mov ax,[es:8*4+2]
+    mov [old8+2],ax
+    mov ax,[es:9*4]
+    mov [old9],ax
+    mov ax,[es:9*4+2]
+    mov [old9+2],ax
+    mov word [es:8*4],isr_timer
+    mov [es:8*4+2],cs
+    mov word [es:9*4],isr_keyboard
+    mov [es:9*4+2],cs
+    sti
+    pop es
+    ret
+
+restore_isrs:
+    push es
+    xor ax,ax
+    mov es,ax
+    cli
+    mov ax,[old8]
+    mov [es:8*4],ax
+    mov ax,[old8+2]
+    mov [es:8*4+2],ax
+    mov ax,[old9]
+    mov [es:9*4],ax
+    mov ax,[old9+2]
+    mov [es:9*4+2],ax
+    sti
+    pop es
+    ret
+
+isr_timer:
+    inc word [cs:tick]
+    jmp far [cs:old8]
+
+isr_keyboard:
+    push ax
+    in al,0x60             ; scancode
+    mov ah,1
+    test al,0x80           ; bit 7 set = key released
+    jz key_pressed
+    xor ah,ah
+key_pressed:
+    and al,0x7F
+    cmp al,0x4B            ; Left
+    jne skip_left
+    mov [cs:key_left],ah
+skip_left:
+    cmp al,0x4D            ; Right
+    jne skip_right
+    mov [cs:key_right],ah
+skip_right:
+    cmp al,0x1C            ; Enter
+    jne skip_enter
+    mov [cs:key_enter],ah
+skip_enter:
+    cmp al,0x01            ; Esc
+    jne skip_esc
+    mov [cs:key_esc],ah
+skip_esc:
+    in al,0x61             ; acknowledge keyboard
+    mov ah,al
+    or al,0x80
+    out 0x61,al
+    mov al,ah
+    out 0x61,al
+    mov al,0x20            ; end of interrupt
+    out 0x20,al
+    pop ax
+    iret
