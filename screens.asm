@@ -27,13 +27,13 @@ draw_start_screen:
     mov di, 2
     call fill_rect
 
-    ; game name, yellow, row 5
+  
     mov si, draw_start_screen_title
     mov dh, 5
     mov bl, 10
     call print_str_center
 
-    ; controls, cyan, row 8
+  
     mov si, draw_start_screen_ctrl
     mov dh, 8
     mov bl, 12
@@ -42,12 +42,12 @@ draw_start_screen:
     ;  rows 10 / 12 / 14
     mov si, draw_start_screen_rule1
     mov dh, 10
-    mov bl, 6                   ; white
+    mov bl, 6                  
     call print_str_center
 
     mov si, draw_start_screen_rule2
     mov dh, 12
-    mov bl, 11                  ; red
+    mov bl, 11                
     call print_str_center
 
     mov si, draw_start_screen_rule3
@@ -55,28 +55,27 @@ draw_start_screen:
     mov bl, 6
     call print_str_center
 
-    ; the 6 Infinity Stones in a row (pixel y = 140, x starts at 68,
-    ; each 24 wide + 8 gap => total 184 pixels, centered on 320)
-    mov bx, stone_sprites       ; BX walks the table of 6 pointers
-    mov ax, 68                  ; AX = current x
-    mov di, 6                   ; DI = stones left to draw
+   
+    mov bx, stone_sprites      
+    mov ax, 68                 
+    mov di, 6                   
 draw_start_screen_stone:
     push ax
     push bx
     push di
-    mov si, [bx]                ; SI = address of this stone's sprite
+    mov si, [bx]                
     mov cx, ax                  ; CX = x
     mov dx, 140                 ; DX = y
     call draw_sprite
     pop di
     pop bx
     pop ax
-    add bx, 2                   ; next pointer (words are 2 bytes)
-    add ax, 32                  ; next x
+    add bx, 2                  
+    add ax, 32                  
     dec di
     jnz draw_start_screen_stone
 
-    ; bottom line, yellow, row 22
+  
     mov si, draw_start_screen_press
     mov dh, 22
     mov bl, 10
@@ -98,11 +97,7 @@ draw_start_screen_rule3: db 'ROUND LASTS 2 MINUTES', 0
 draw_start_screen_press: db 'PRESS ENTER TO START', 0
 
 
-; ------------------------------------------------------------
-; draw_end_screen   (also callable as show_end_screen)
-;   No input.  Uses [end_reason] (0 = time's up, 1 = caught a stone)
-;   and [score].
-; ------------------------------------------------------------
+
 show_end_screen:
 draw_end_screen:
     push ax
@@ -110,16 +105,16 @@ draw_end_screen:
     push dx
     push si
 
-    mov al, 1                   ; dark background
+    mov al, 1                
     call fill_screen
 
     cmp byte [end_reason], 1
-    jne draw_end_screen_time    ; not 1 -> time's up
+    jne draw_end_screen_time  
 
-    ; ---- variant 1: caught an Infinity Stone ----
+    ; caught infinity stone
     mov si, draw_end_screen_snap
     mov dh, 6
-    mov bl, 11                  ; red
+    mov bl, 11                  
     call print_str_center
     mov si, draw_end_screen_caught
     mov dh, 8
@@ -128,22 +123,22 @@ draw_end_screen:
     jmp draw_end_screen_score
 
 draw_end_screen_time:
-    ; ---- variant 2: time is up ----
+    ; time is up 
     mov si, draw_end_screen_timeup
     mov dh, 6
-    mov bl, 10                  ; yellow
+    mov bl, 10                 
     call print_str_center
 
 draw_end_screen_score:
     mov si, draw_end_screen_final
     mov dh, 12
-    mov bl, 6                   ; white
+    mov bl, 6                  
     call print_str_center
 
     mov ax, [score]
     mov dh, 14
-    mov dl, 17                  ; 5-char field centered: (40-5)/2 = 17
-    mov bl, 10                  ; yellow
+    mov dl, 17                 
+    mov bl, 10                
     call print_num
 
     mov si, draw_end_screen_again
@@ -164,13 +159,6 @@ draw_end_screen_final:  db 'FINAL SCORE:', 0
 draw_end_screen_again:  db 'PRESS ENTER TO PLAY AGAIN', 0
 
 
-; ------------------------------------------------------------
-; draw_score
-;   No input.  Live score in the top-right of the HUD.
-;   Clears pixels x 232..319, rows 0..8, then prints "SCORE:" at
-;   columns 29..34 and the number at columns 35..39 (text row 0).
-;   Text row 0 is pixel rows 0..7, so nothing goes below row 9.
-; ------------------------------------------------------------
 draw_score:
     push ax
     push bx
@@ -179,22 +167,22 @@ draw_score:
     push si
     push di
 
-    mov al, 1                   ; HUD navy
+    mov al, 1                  
     mov cx, 232                 ; x
     mov dx, 0                   ; y
-    mov si, 88                  ; width  (232 + 88 = 320)
-    mov di, 9                   ; height (rows 0..8)
+    mov si, 88                 
+    mov di, 9                  
     call fill_rect
 
     mov si, draw_score_label
     mov dh, 0
-    mov dl, 29                  ; 29 * 8 = 232 pixels
-    mov bl, 6                   ; white
+    mov dl, 29                
+    mov bl, 6              
     call print_str
 
     mov ax, [score]
     mov dh, 0
-    mov dl, 35                  ; 35..39 -> ends at column 39
+    mov dl, 35               
     mov bl, 6
     call print_num
 
@@ -209,11 +197,6 @@ draw_score:
 draw_score_label: db 'SCORE:', 0
 
 
-; ------------------------------------------------------------
-; draw_hud
-;   No input.  The part of the HUD that is mine = the score.
-;   (Umer's draw_background already draws the HUD bar itself.)
-; ------------------------------------------------------------
 draw_hud:
     call draw_score
     ret
