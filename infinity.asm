@@ -1,6 +1,11 @@
 [org 0x0100]
 jmp start
 
+ROUND_SECONDS equ 120
+seconds_left db 120
+tick_acc dw 0
+GAUNTLET_Y equ 152
+gauntlet_x dw 148
 bg_seg dw 0
 STATE_START equ 0
 STATE_PLAY  equ 1
@@ -52,11 +57,14 @@ do_start:
     je main_loop
     mov byte [key_enter],0
     mov byte [state],STATE_PLAY
-    call draw_background
-	call draw_test_sprites
+    call draw_play_screen
+	call start_round
 	jmp main_loop
 
 do_play:
+	call update_timer
+    cmp byte [state],STATE_PLAY    ; the timer may have ended the game
+    jne main_loop
     cmp byte [key_enter],0
     je main_loop
     mov byte [key_enter],0
@@ -70,7 +78,8 @@ do_ended:
     je main_loop
     mov byte [key_enter],0
     mov byte [state],STATE_PLAY
-    call draw_background
+    call draw_play_screen
+	call start_round
     jmp main_loop
 
 fill_screen:               ; AL = colour
@@ -406,23 +415,37 @@ erase_row:
     pop ax
     ret
 	
-draw_test_sprites:
+draw_gauntlet:
+    push cx
+    push dx
+    push si
     mov si,sprite_gauntlet
-    mov cx,40
-    mov dx,152
+    mov cx,[gauntlet_x]
+    mov dx,GAUNTLET_Y
     call draw_sprite
-    mov si,sprite_arc
-    mov cx,110
-    call draw_sprite
-    mov si,sprite_shield
-    mov cx,180
-    call draw_sprite
-    mov si,sprite_mjolnir
-    mov cx,250
-    call draw_sprite
+    pop si
+    pop dx
+    pop cx
     ret
-	
-	; draws every rectangle in decor_table (x, y, width, height, colour)
+
+draw_play_screen:
+    call draw_background
+    call draw_gauntlet
+    mov si,sprite_arc          ; 5 points
+    mov cx,40
+    mov dx,40
+    call draw_sprite
+    mov si,sprite_shield       ; 10 points
+    mov cx,140
+    mov dx,70
+    call draw_sprite
+    mov si,sprite_mjolnir      ; 15 points
+    mov cx,230
+    mov dx,50
+    call draw_sprite
+    ret	
+
+; draws every rectangle in decor_table (x, y, width, height, colour)
 draw_decor:
     mov bx,decor_table
 decor_loop:
@@ -488,5 +511,100 @@ decor_table:
     dw 0,192,320,1,23      ; ground
     dw 0,196,320,1,24
     dw 0xFFFF
+	
+	; sets the clock back to 2:00 and shows it
+start_round:
+    mov byte [seconds_left],ROUND_SECONDS
+    mov word [tick_acc],0
+    call draw_time
+    ret
+
+; called once per game step. 10 per tick, 182 = one second (18.2 ticks/s)
+update_timer:
+    add word [tick_acc],10
+    cmp word [tick_acc],182
+    jb timer_done
+    sub word [tick_acc],182
+    dec byte [seconds_left]
+    call draw_time
+    cmp byte [seconds_left],0
+    jne timer_done
+    mov byte [state],STATE_ENDED   ; time's up
+    mov al,4                       ; temporary end screen (Maria's comes later)
+    call fill_screen
+timer_done:
+    ret
+
+; draws TIME mm:ss in the top-left of the HUD
+draw_time:
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    xor cx,cx
+    xor dx,dx
+    mov si,88
+    mov di,9
+    mov al,COL_HUD
+    call fill_rect         ; clear the old time
+    mov ah,2
+    xor bh,bh
+    xor dx,dx
+    int 0x10               ; cursor to top-left
+    mov si,time_label
+    call put_str
+    mov al,[seconds_left]
+    xor ah,ah
+    mov bl,60
+    div bl                 ; AL = minutes, AH = seconds
+    push ax
+    call put_two
+    mov al,':'
+    call put_char
+    pop ax
+    mov al,ah
+    call put_two
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+put_str:                   ; SI = zero-terminated text
+    lodsb
+    cmp al,0
+    je put_str_done
+    call put_char
+    jmp put_str
+put_str_done:
+    ret
+
+put_two:                   ; AL = 0..99, printed as two digits
+    xor ah,ah
+    mov bl,10
+    div bl
+    push ax
+    add al,'0'
+    call put_char
+    pop ax
+    mov al,ah
+    add al,'0'
+    call put_char
+    ret
+
+put_char:                  ; AL = character
+    push bx
+    mov ah,0x0E
+    xor bh,bh
+    mov bl,COL_WHITE
+    int 0x10
+    pop bx
+    ret
+
+time_label db 'TIME ',0
 	
 	%include "gear.asm"
