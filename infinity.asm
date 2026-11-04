@@ -1,6 +1,7 @@
 [org 0x0100]
 jmp start
 
+bg_seg dw 0
 STATE_START equ 0
 STATE_PLAY  equ 1
 STATE_ENDED equ 2
@@ -28,6 +29,9 @@ start:
     int 0x10
     mov ax,0xA000
     mov es,ax              ; ES = video memory
+    mov ax,cs
+    add ax,0x1000
+    mov [bg_seg],ax        ; hidden background copy lives here
     call set_palette
     call install_isrs
     mov al,1               ; navy = start screen
@@ -91,7 +95,7 @@ wait_loop:
     je wait_loop
     ret
 	
-	install_isrs:
+install_isrs:
     push es
     xor ax,ax
     mov es,ax              ; ES = interrupt vector table
@@ -169,7 +173,7 @@ skip_esc:
     pop ax
     iret
 	
-	set_palette:
+set_palette:
     mov dx,0x3C8
     xor al,al
     out dx,al              ; start at colour 0
@@ -211,6 +215,15 @@ palette_data:
     db 24,26,30     ; 24 dark grey
     db 46,26,8      ; 25 light brown
     db 63,34,34     ; 26 light red
+	db 63,50,10     ; 27 bright lava
+    db 36,8,2       ; 28 deep red
+	db 18,24,52     ; 29 sky 1
+    db 26,32,60     ; 30 sky 2
+    db 34,42,63     ; 31 sky 3
+    db 44,52,63     ; 32 sky 4
+    db 63,52,48     ; 33 horizon glow
+    db 60,62,63     ; 34 cloud
+    db 48,54,63     ; 35 cloud shade
 PALETTE_BYTES equ $-palette_data
 
 ; CX=x, DX=y, SI=width, DI=height, AL=colour
@@ -252,6 +265,9 @@ fill_row:
     ret
 	
 draw_background:
+    push es
+    mov ax,[bg_seg]
+    mov es,ax              ; draw into the hidden copy
     xor cx,cx
     xor dx,dx
     mov si,320
@@ -266,17 +282,16 @@ draw_background:
     mov di,166
     mov al,COL_SKY
     call fill_rect         ; sky
-    mov dx,176
-    mov di,16
-    mov al,COL_LAVA
-    call fill_rect         ; lava
     mov dx,192
     mov di,8
     mov al,COL_GROUND
     call fill_rect         ; ground
+    call draw_decor
+    pop es
+    call show_background   ; copy it to the screen
     ret
 	
-	; SI=sprite (9 bytes), CX=x, DX=y. Colour 0 = transparent
+; SI=sprite (9 bytes), CX=x, DX=y. Colour 0 = transparent
 ; SI=sprite (24x24 bytes), CX=x, DX=y. Colour 0 = transparent
 draw_sprite:
     push ax
@@ -319,20 +334,79 @@ sprite_next:
     pop ax
     ret
 	
-erase_sprite:
+; copies the hidden background to the screen
+show_background:
     push ax
+    push cx
     push si
     push di
-    mov si,24
-    mov di,24
-    mov al,COL_SKY
-    call fill_rect
+    push ds
+    push es
+    mov ax,0xA000
+    mov es,ax
+    mov ax,[bg_seg]
+    mov ds,ax
+    xor si,si
+    xor di,di
+    mov cx,32000
+    cld
+    rep movsw
+    pop es
+    pop ds
     pop di
     pop si
+    pop cx
+    pop ax
+    ret
+
+; CX=x, DX=y. Restores the 24x24 area from the hidden background
+erase_sprite:
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push ds
+    push es
+    push cx
+    mov di,dx
+    mov cl,8
+    shl di,cl
+    mov cl,6
+    shl dx,cl
+    add di,dx
+    pop cx
+    add di,cx              ; DI = y*320+x
+    mov si,di
+    mov ax,0xA000
+    mov es,ax
+    mov ax,[bg_seg]
+    mov ds,ax
+    cld
+    mov bx,24
+erase_row:
+    mov cx,12              ; 24 bytes = 12 words
+    push si
+    push di
+    rep movsw
+    pop di
+    pop si
+    add si,320
+    add di,320
+    dec bx
+    jnz erase_row
+    pop es
+    pop ds
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
     pop ax
     ret
 	
-	draw_test_sprites:
+draw_test_sprites:
     mov si,sprite_gauntlet
     mov cx,40
     mov dx,152
@@ -347,5 +421,72 @@ erase_sprite:
     mov cx,250
     call draw_sprite
     ret
+	
+	; draws every rectangle in decor_table (x, y, width, height, colour)
+draw_decor:
+    mov bx,decor_table
+decor_loop:
+    mov cx,[bx]
+    cmp cx,0xFFFF          ; end marker
+    je decor_done
+    mov dx,[bx+2]
+    mov si,[bx+4]
+    mov di,[bx+6]
+    mov ax,[bx+8]          ; colour ends up in AL
+    call fill_rect
+    add bx,10
+    jmp decor_loop
+decor_done:
+    ret
+
+decor_table:
+    dw 0,10,320,30,29      ; sky bands, dark at the top
+    dw 0,40,320,40,30
+    dw 0,80,320,40,31
+    dw 0,120,320,30,32
+    dw 0,150,320,26,33     ; warm glow above the lava
+    dw 22,16,1,1,6         ; stars
+    dw 70,24,1,1,6
+    dw 118,14,2,2,6
+    dw 165,28,1,1,6
+    dw 214,18,1,1,6
+    dw 262,26,2,2,6
+    dw 296,14,1,1,6
+    dw 44,50,1,1,6
+    dw 150,56,1,1,6
+    dw 300,60,1,1,6
+    dw 30,96,22,3,34       ; clouds
+    dw 24,99,34,4,34
+    dw 30,103,24,2,35
+    dw 200,112,26,3,34
+    dw 194,115,38,4,34
+    dw 200,119,28,2,35
+    dw 100,128,18,3,34
+    dw 95,131,28,3,34
+    dw 100,134,18,2,35
+    dw 0,176,320,2,27      ; lava
+    dw 0,178,320,4,3
+    dw 0,182,320,6,4
+    dw 0,188,320,4,28
+    dw 14,176,10,1,3
+    dw 60,177,12,1,3
+    dw 105,176,9,1,3
+    dw 150,177,14,1,3
+    dw 200,176,10,1,3
+    dw 245,177,12,1,3
+    dw 290,176,10,1,3
+    dw 30,180,16,1,27
+    dw 120,181,20,1,27
+    dw 215,180,18,1,27
+    dw 270,181,14,1,27
+    dw 70,185,12,1,3
+    dw 170,186,16,1,3
+    dw 250,185,10,1,3
+    dw 45,189,2,2,3
+    dw 130,190,2,2,3
+    dw 225,189,2,2,3
+    dw 0,192,320,1,23      ; ground
+    dw 0,196,320,1,24
+    dw 0xFFFF
 	
 	%include "gear.asm"
