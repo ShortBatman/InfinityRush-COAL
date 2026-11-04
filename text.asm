@@ -1,37 +1,24 @@
-; ============================================================
-; text.asm  -  text helpers for Infinity Rush (task M1)
-; Included at the bottom of infinity.asm (no org, no entry point).
-; Uses BIOS int 10h in mode 13h (text grid 40 columns x 25 rows).
-; Assumes DS = CS (so our data can be read/written) and ES = A000h.
-; All registers are preserved by every routine.
-; ============================================================
+; task M1
 
-
-; ------------------------------------------------------------
-; print_str
-;   In:  SI = address of zero-terminated string
-;        DH = text row, DL = text column, BL = colour
-;   Stops early if the column would go past 39 (no wrapping).
-; ------------------------------------------------------------
 print_str:
     push ax
     push bx
     push dx
     push si
 
-    mov bh, 0               ; video page 0
-    mov ah, 02h             ; set cursor position (uses BH, DH, DL)
+    mov bh, 0               
+    mov ah, 02h             ;
     int 10h
 
 print_str_loop:
-    cmp dl, 40              ; column 40 would wrap to next row
+    cmp dl, 40              
     jae print_str_done
-    lodsb                   ; AL = next char, SI = SI + 1
-    cmp al, 0               ; zero terminator?
+    lodsb                 
+    cmp al, 0               
     je print_str_done
-    mov ah, 0Eh             ; teletype: print AL, colour in BL
+    mov ah, 0Eh             
     int 10h
-    inc dl                  ; remember the column we are at
+    inc dl                 
     jmp print_str_loop
 
 print_str_done:
@@ -42,13 +29,6 @@ print_str_done:
     ret
 
 
-; ------------------------------------------------------------
-; print_num
-;   In:  AX = unsigned number 0..65535
-;        DH = row, DL = column, BL = colour
-;   Prints the number right-aligned in a field of 5 characters.
-;   (Make sure DL + 5 <= 40, i.e. DL <= 35.)
-; ------------------------------------------------------------
 print_num:
     push ax
     push bx
@@ -57,26 +37,27 @@ print_num:
     push si
     push di
 
-    push dx                 ; extra copy of row/column (DIV will destroy DX)
+    push dx                 
 
-    ; fill the 5-character buffer with spaces
+    ; fill 5 character buffer with spaces
+
     mov byte [print_num_buf],   ' '
     mov byte [print_num_buf+1], ' '
     mov byte [print_num_buf+2], ' '
     mov byte [print_num_buf+3], ' '
     mov byte [print_num_buf+4], ' '
 
-    mov di, print_num_buf + 4   ; start at the last (rightmost) cell
-    mov cx, 10                  ; divisor
+    mov di, print_num_buf + 4   
+    mov cx, 10                 
 
 print_num_digit:
-    xor dx, dx              ; DX:AX = number (high word 0)
-    div cx                  ; AX = AX / 10, DX = remainder (0..9)
-    add dl, '0'             ; remainder -> ASCII digit
-    mov [di], dl            ; store digit
-    dec di                  ; move one cell to the left
+    xor dx, dx              
+    div cx                 
+    add dl, '0'            
+    mov [di], dl            
+    dec di                  
     cmp ax, 0
-    jne print_num_digit     ; loop until nothing is left (0 prints "0")
+    jne print_num_digit     
 
     pop dx                  ; get row/column back
     mov si, print_num_buf
