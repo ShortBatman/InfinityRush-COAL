@@ -4,6 +4,13 @@ jmp start
 STATE_START equ 0
 STATE_PLAY  equ 1
 STATE_ENDED equ 2
+COL_BLACK  equ 0
+COL_HUD    equ 1
+COL_SKY    equ 2
+COL_LAVA   equ 3
+COL_LAVA2  equ 4
+COL_GROUND equ 5
+COL_WHITE  equ 6
 
 state     db STATE_START
 tick      dw 0
@@ -20,10 +27,11 @@ start:
     int 0x10
     mov ax,0xA000
     mov es,ax              ; ES = video memory
+    call set_palette
     call install_isrs
-    mov al,1               ; blue = start screen
+    mov al,1               ; navy = start screen
     call fill_screen
-
+	
 main_loop:
     call wait_tick
     cmp byte [key_esc],0
@@ -39,8 +47,7 @@ do_start:
     je main_loop
     mov byte [key_enter],0
     mov byte [state],STATE_PLAY
-    mov al,2               ; green = play screen
-    call fill_screen
+    call draw_background
 	jmp main_loop
 
 do_play:
@@ -57,8 +64,7 @@ do_ended:
     je main_loop
     mov byte [key_enter],0
     mov byte [state],STATE_PLAY
-    mov al,2
-    call fill_screen
+    call draw_background
     jmp main_loop
 
 fill_screen:               ; AL = colour
@@ -160,3 +166,103 @@ skip_esc:
     out 0x20,al
     pop ax
     iret
+	
+	set_palette:
+    mov dx,0x3C8
+    xor al,al
+    out dx,al              ; start at colour 0
+    inc dx                 ; DX = 0x3C9
+    mov si,palette_data
+    mov cx,PALETTE_BYTES
+palette_loop:
+    lodsb
+    out dx,al
+    loop palette_loop
+    ret
+
+; one line per colour: red, green, blue (each 0-63)
+palette_data:
+    db 0,0,0        ; 0  black (transparent in sprites)
+    db 6,6,16       ; 1  HUD navy
+    db 31,41,63     ; 2  sky
+    db 60,25,5      ; 3  lava
+    db 48,16,3      ; 4  dark lava
+    db 26,28,32     ; 5  ground
+    db 63,63,63     ; 6  white
+    db 60,46,0      ; 7  gold
+    db 46,30,6      ; 8  dark gold
+    db 15,30,60     ; 9  blue
+    db 63,56,5      ; 10 yellow
+    db 60,16,16     ; 11 red
+    db 8,52,60      ; 12 cyan
+    db 55,10,10     ; 13 shield red
+    db 9,25,60      ; 14 shield blue
+    db 40,42,46     ; 15 grey
+    db 36,16,2      ; 16 brown
+    db 42,20,62     ; 17 purple
+    db 8,50,16      ; 18 green
+    db 62,36,4      ; 19 orange
+PALETTE_BYTES equ $-palette_data
+
+; CX=x, DX=y, SI=width, DI=height, AL=colour
+fill_rect:
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    mov bx,di              ; BX = rows left
+    mov ah,al              ; park the colour in AH
+    push cx                ; save x
+    mov di,dx
+    mov cl,8
+    shl di,cl              ; y*256
+    mov cl,6
+    shl dx,cl              ; y*64
+    add di,dx              ; y*320
+    pop cx
+    add di,cx              ; + x
+    mov al,ah
+    mov dx,si              ; DX = width
+    cld
+fill_row:
+    mov cx,dx
+    push di
+    rep stosb
+    pop di
+    add di,320             ; next row
+    dec bx
+    jnz fill_row
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+	
+	draw_background:
+    xor cx,cx
+    xor dx,dx
+    mov si,320
+    mov di,10
+    mov al,COL_HUD
+    call fill_rect         ; HUD bar
+    mov dx,9
+    mov di,1
+    mov al,COL_WHITE
+    call fill_rect         ; divider line
+    mov dx,10
+    mov di,166
+    mov al,COL_SKY
+    call fill_rect         ; sky
+    mov dx,176
+    mov di,16
+    mov al,COL_LAVA
+    call fill_rect         ; lava
+    mov dx,192
+    mov di,8
+    mov al,COL_GROUND
+    call fill_rect         ; ground
+    ret
