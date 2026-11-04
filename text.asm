@@ -7,7 +7,7 @@ print_str:
     push si
 
     mov bh, 0               
-    mov ah, 02h             ;
+    mov ah, 02h             
     int 10h
 
 print_str_loop:
@@ -59,9 +59,9 @@ print_num_digit:
     cmp ax, 0
     jne print_num_digit     
 
-    pop dx                  ; get row/column back
+    pop dx                
     mov si, print_num_buf
-    call print_str          ; BL is still the colour
+    call print_str        
 
     pop di
     pop si
@@ -71,21 +71,16 @@ print_num_digit:
     pop ax
     ret
 
-print_num_buf:  db '     ', 0       ; 5 characters + terminator
+print_num_buf:  db '     ', 0     
 
 
-; ------------------------------------------------------------
-; print_str_center
-;   In:  SI = zero-terminated string, DH = row, BL = colour
-;   Column = (40 - length) / 2.  Strings of 40+ characters start at 0.
-; ------------------------------------------------------------
 print_str_center:
     push ax
     push dx
     push di
 
-    mov di, si              ; DI walks the string, SI stays at its start
-    xor ax, ax              ; AX = length counter
+    mov di, si            
+    xor ax, ax            
 
 print_str_center_len:
     cmp byte [di], 0
@@ -97,16 +92,16 @@ print_str_center_len:
 print_str_center_calc:
     cmp ax, 40
     jb print_str_center_fits
-    mov dl, 0               ; too long: start at column 0
+    mov dl, 0              
     jmp print_str_center_go
 
 print_str_center_fits:
     mov dl, 40
-    sub dl, al              ; 40 - length
-    shr dl, 1               ; divide by 2
+    sub dl, al           
+    shr dl, 1             
 
 print_str_center_go:
-    call print_str          ; DH = row (unchanged), DL = column
+    call print_str          
 
     pop di
     pop dx
