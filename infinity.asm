@@ -1,6 +1,8 @@
 [org 0x0100]
 jmp start
 
+end_reason db 0
+score dw 0
 ROUND_SECONDS equ 120
 seconds_left db 120
 tick_acc dw 0
@@ -39,8 +41,7 @@ start:
     mov [bg_seg],ax        ; hidden background copy lives here
     call set_palette
     call install_isrs
-    mov al,1               ; navy = start screen
-    call fill_screen
+    call draw_start_screen
 	
 main_loop:
     call wait_tick
@@ -69,8 +70,7 @@ do_play:
     je main_loop
     mov byte [key_enter],0
     mov byte [state],STATE_ENDED
-    mov al,4               ; red = end screen
-    call fill_screen
+    call draw_end_screen
     jmp main_loop
 
 do_ended:
@@ -233,6 +233,18 @@ palette_data:
     db 63,52,48     ; 33 horizon glow
     db 60,62,63     ; 34 cloud
     db 48,54,63     ; 35 cloud shade
+	db 30,48,63     ; 36 space light
+    db 63,62,30     ; 37 mind light
+    db 63,38,38     ; 38 reality light
+    db 54,40,63     ; 39 power light
+    db 30,63,38     ; 40 time light
+    db 63,50,24     ; 41 soul light
+    db 8,16,40      ; 42 space dark
+    db 46,38,0      ; 43 mind dark
+    db 38,6,6       ; 44 reality dark
+    db 24,8,42      ; 45 power dark
+    db 2,32,8       ; 46 time dark
+    db 42,20,0      ; 47 soul dark
 PALETTE_BYTES equ $-palette_data
 
 ; CX=x, DX=y, SI=width, DI=height, AL=colour
@@ -443,6 +455,18 @@ draw_play_screen:
     mov cx,230
     mov dx,50
     call draw_sprite
+	mov si,[stone_sprites]     ; Space stone
+    mov cx,80
+    mov dx,100
+    call draw_sprite
+    mov si,[stone_sprites+6]   ; Power stone
+    mov cx,190
+    mov dx,110
+    call draw_sprite
+    mov si,[stone_sprites+8]   ; Time stone
+    mov cx,265
+    mov dx,115
+    call draw_sprite
     ret	
 
 ; draws every rectangle in decor_table (x, y, width, height, colour)
@@ -514,8 +538,11 @@ decor_table:
 	
 	; sets the clock back to 2:00 and shows it
 start_round:
+    mov word [score],0
+    mov byte [end_reason],0
     mov byte [seconds_left],ROUND_SECONDS
     mov word [tick_acc],0
+    call draw_score
     call draw_time
     ret
 
@@ -530,8 +557,7 @@ update_timer:
     cmp byte [seconds_left],0
     jne timer_done
     mov byte [state],STATE_ENDED   ; time's up
-    mov al,4                       ; temporary end screen (Maria's comes later)
-    call fill_screen
+    call draw_end_screen
 timer_done:
     ret
 
@@ -607,4 +633,7 @@ put_char:                  ; AL = character
 
 time_label db 'TIME ',0
 	
-	%include "gear.asm"
+%include "gear.asm"
+%include "stones.asm"
+%include "text.asm"
+%include "screens.asm"
