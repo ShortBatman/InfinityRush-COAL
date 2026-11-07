@@ -1,30 +1,21 @@
 ; task M1
 
-print_str:
+print_str:                  ; SI = string, DH = row, DL = column, BL = colour
     push ax
-    push bx
     push dx
     push si
-
-    mov bh, 0               
-    mov ah, 02h             
-    int 10h
-
 print_str_loop:
-    cmp dl, 40              
+    cmp dl, 40
     jae print_str_done
-    lodsb                 
-    cmp al, 0               
+    lodsb
+    cmp al, 0
     je print_str_done
-    mov ah, 0Eh             
-    int 10h
-    inc dl                 
+    call draw_char          ; draws only the letter's pixels (see font.asm)
+    inc dl
     jmp print_str_loop
-
 print_str_done:
     pop si
     pop dx
-    pop bx
     pop ax
     ret
 
