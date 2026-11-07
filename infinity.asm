@@ -3,7 +3,7 @@ jmp start
 
 end_reason db 0
 score dw 0
-ROUND_SECONDS equ 120
+ROUND_SECONDS equ 10
 seconds_left db 120
 tick_acc dw 0
 GAUNTLET_Y equ 152
@@ -36,12 +36,13 @@ start:
     int 0x10
     mov ax,0xA000
     mov es,ax              ; ES = video memory
+    call font_init
     mov ax,cs
     add ax,0x1000
     mov [bg_seg],ax        ; hidden background copy lives here
     call set_palette
     call install_isrs
-    call draw_start_screen
+    call draw_start_menu
 	
 main_loop:
     call wait_tick
@@ -63,14 +64,14 @@ do_start:
 	jmp main_loop
 
 do_play:
-	call update_timer
+    call update_timer
     cmp byte [state],STATE_PLAY    ; the timer may have ended the game
     jne main_loop
     cmp byte [key_enter],0
     je main_loop
     mov byte [key_enter],0
     mov byte [state],STATE_ENDED
-    call draw_end_screen
+    call draw_end_menu
     jmp main_loop
 
 do_ended:
@@ -217,23 +218,23 @@ palette_data:
     db 42,20,62     ; 17 purple
     db 8,50,16      ; 18 green
     db 62,36,4      ; 19 orange
-	db 10,8,14      ; 20 outline
+    db 10,8,14      ; 20 outline
     db 63,58,25     ; 21 light gold
     db 35,60,63     ; 22 light cyan
     db 52,54,58     ; 23 light grey
     db 24,26,30     ; 24 dark grey
     db 46,26,8      ; 25 light brown
     db 63,34,34     ; 26 light red
-	db 63,50,10     ; 27 bright lava
+    db 63,50,10     ; 27 bright lava
     db 36,8,2       ; 28 deep red
-	db 18,24,52     ; 29 sky 1
+    db 18,24,52     ; 29 sky 1
     db 26,32,60     ; 30 sky 2
     db 34,42,63     ; 31 sky 3
     db 44,52,63     ; 32 sky 4
     db 63,52,48     ; 33 horizon glow
     db 60,62,63     ; 34 cloud
     db 48,54,63     ; 35 cloud shade
-	db 30,48,63     ; 36 space light
+    db 30,48,63     ; 36 space light
     db 63,62,30     ; 37 mind light
     db 63,38,38     ; 38 reality light
     db 54,40,63     ; 39 power light
@@ -557,7 +558,7 @@ update_timer:
     cmp byte [seconds_left],0
     jne timer_done
     mov byte [state],STATE_ENDED   ; time's up
-    call draw_end_screen
+    call draw_end_menu
 timer_done:
     ret
 
@@ -575,10 +576,7 @@ draw_time:
     mov di,9
     mov al,COL_HUD
     call fill_rect         ; clear the old time
-    mov ah,2
-    xor bh,bh
-    xor dx,dx
-    int 0x10               ; cursor to top-left
+    mov byte [put_col],0   ; start at the left edge
     mov si,time_label
     call put_str
     mov al,[seconds_left]
@@ -622,12 +620,15 @@ put_two:                   ; AL = 0..99, printed as two digits
     call put_char
     ret
 
-put_char:                  ; AL = character
+put_char:                  ; AL = character, drawn in the HUD at the next column
     push bx
-    mov ah,0x0E
-    xor bh,bh
+    push dx
+    mov dh,0
+    mov dl,[put_col]
     mov bl,COL_WHITE
-    int 0x10
+    call draw_char
+    inc byte [put_col]
+    pop dx
     pop bx
     ret
 
@@ -636,4 +637,7 @@ time_label db 'TIME ',0
 %include "gear.asm"
 %include "stones.asm"
 %include "text.asm"
+%include "font.asm"
 %include "screens.asm"
+%include "menus.asm"
+%include "banners.asm"
