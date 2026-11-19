@@ -98,7 +98,7 @@ exit:
     mov ax,0x4c00
     int 21h
 
-	; this loop is necessary to maintain a uniform speed of updates. wrna cpu unlimited speed k sath apni mrzi sy screen update krta jaega
+	;this loop is necessary to maintain a uniform speed of updates. wrna cpu unlimited speed k sath apni mrzi sy screen update krta jaega
 wait_tick:
     mov ax,[tick]
 wait_loop:
@@ -109,7 +109,7 @@ wait_loop:
 install_isrs:				;hooking interrupts
     push es
     xor ax,ax
-    mov es,ax              ;ES = interrupt vector table
+    mov es,ax               ;ES = interrupt vector table
     cli						;no interrupts will fire till we're done hooking em 
     mov ax,[es:8*4]			
     mov [old8],ax
