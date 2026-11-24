@@ -147,28 +147,7 @@ draw_start_menu:
     mov dl,24
     mov bl,11
     call print_str
-    mov si,sprite_arc
-    mov cx,32
-    mov dx,80
-    call draw_sprite
-    mov si,sprite_shield
-    mov dx,104
-    call draw_sprite
-    mov si,sprite_mjolnir
-    mov dx,128
-    call draw_sprite
-    mov si,menu_txt_pts5
-    mov dh,11
-    mov dl,8
-    mov bl,6
-    call print_str
-    mov si,menu_txt_pts10
-    mov dh,14
-    call print_str
-    mov si,menu_txt_pts15
-    mov dh,17
-    call print_str
-    mov bx,stone_sprites   ; the six stones, two rows of three
+    mov bx,stone_sprites   ; catch side: three pairs of stones, one pair per point value
     mov di,menu_stone_pos
     mov bp,6
 menu_stone_loop:
@@ -180,13 +159,34 @@ menu_stone_loop:
     add di,4
     dec bp
     jnz menu_stone_loop
-    mov si,menu_txt_any
+    mov si,menu_txt_pts5
+    mov dh,11
+    mov dl,11
+    mov bl,6
+    call print_str
+    mov si,menu_txt_pts10
+    mov dh,14
+    call print_str
+    mov si,menu_txt_pts15
     mov dh,17
+    call print_str
+    mov si,sprite_arc      ; avoid side: the three Avengers weapons
+    mov cx,200
+    mov dx,84
+    call draw_sprite
+    mov si,sprite_shield
+    mov cx,232
+    call draw_sprite
+    mov si,sprite_mjolnir
+    mov cx,264
+    call draw_sprite
+    mov si,menu_txt_any
+    mov dh,15
     mov dl,24
     mov bl,6
     call print_str
     mov si,menu_txt_ends
-    mov dh,18
+    mov dh,16
     call print_str
     mov si,menu_txt_round
     mov dh,21
@@ -216,15 +216,15 @@ draw_end_menu:
     call menu_background
     cmp byte [end_reason],1
     jne menu_end_time
-    mov si,banner_snap     ; caught a stone
-    mov cx,(320-BANNER_SNAP_W)/2
+    mov si,banner_avengers ; hit an Avengers weapon
+    mov cx,(320-BANNER_AVENGERS_W)/2
     mov dx,24
     call draw_bitmap
-    mov si,[stone_sprites+4]
-    mov cx,28
+    mov si,sprite_mjolnir
+    mov cx,12
     mov dx,22
     call draw_sprite
-    mov cx,268
+    mov cx,284
     call draw_sprite
     mov si,menu_txt_caught
     mov dh,8
@@ -283,22 +283,23 @@ menu_end_panel:
 menu_txt_ctrl:   db 'LEFT / RIGHT ARROWS : MOVE',0
 menu_txt_catch:  db 'CATCH THESE',0
 menu_txt_avoid:  db 'AVOID!',0
-menu_txt_pts5:   db 'REACTOR  +5',0
-menu_txt_pts10:  db 'SHIELD  +10',0
-menu_txt_pts15:  db 'MJOLNIR  +15',0
-menu_txt_any:    db 'ANY STONE',0
+menu_txt_pts5:   db '+5 POINTS',0
+menu_txt_pts10:  db '+10 POINTS',0
+menu_txt_pts15:  db '+15 POINTS',0
+menu_txt_any:    db 'ANY OF THESE',0
 menu_txt_ends:   db 'ENDS THE GAME',0
 menu_txt_round:  db 'ROUND LASTS 2 MINUTES',0
 menu_txt_press:  db 'PRESS ENTER TO START',0
-menu_txt_caught: db 'YOU CAUGHT AN INFINITY STONE',0
+menu_txt_caught: db 'YOU HIT AN AVENGERS WEAPON',0
 menu_txt_over:   db 'THE ROUND IS OVER',0
 menu_txt_final:  db 'FINAL SCORE',0
 menu_txt_again:  db 'PRESS ENTER TO PLAY AGAIN',0
 menu_txt_quit:   db 'ESC = QUIT',0
 
 menu_stone_pos:
-    dw 200,80, 232,80, 264,80
-    dw 200,108, 232,108, 264,108
+    dw 24,80, 56,80        ; Space, Mind    (+5)
+    dw 24,104, 56,104      ; Reality, Power (+10)
+    dw 24,128, 56,128      ; Time, Soul     (+15)
 
 menu_bg_table:
     dw 12,12,1,1,6         ; stars

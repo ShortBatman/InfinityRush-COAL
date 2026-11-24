@@ -3,11 +3,21 @@ jmp start
 
 end_reason db 0
 score dw 0
-ROUND_SECONDS equ 10
+ROUND_SECONDS equ 120
 seconds_left db 120
 tick_acc dw 0
 GAUNTLET_Y equ 152
+GAUNTLET_STEP equ 6        ; pixels moved per tick
+GAUNTLET_MAX  equ 296      ; 320 - 24, the right wall
 gauntlet_x dw 148
+OBJ_COUNT  equ 6
+OBJ_SIZE   equ 8
+FALL_SPEED equ 2
+FALL_LIMIT equ 152
+spawn_wait db 0
+spawn_n    db 0
+COLLIDE_X  equ 20
+COLLIDE_Y  equ 20
 bg_seg dw 0
 STATE_START equ 0
 STATE_PLAY  equ 1
@@ -47,7 +57,9 @@ start:
 main_loop:
     call wait_tick
     cmp byte [key_esc],0		;key_esc is 0 until Escape is pressed
-    jne exit
+    je esc_not_pressed
+    jmp exit
+esc_not_pressed:
     cmp byte [state],STATE_START	;both state_start and state_play have been assigned values
     je do_start						;to which state the game is supposed to jump to, depends on the state variable
     cmp byte [state],STATE_PLAY
@@ -58,27 +70,27 @@ do_start:
     je main_loop				;if enter has not been pressed,remain in the main_loop
     mov byte [key_enter],0
     mov byte [state],STATE_PLAY		;if we are here, that means enter has been pressed and we enter the play state.
-    call draw_play_screen			;draws the play screen lava etc
-	call start_round				;resets timer and score
+    call reset_game
 	jmp main_loop					;back to the main loop awaiting for further instructions
 									;and this time we will enter play state cus state has been changed to 1
 do_play:
     call update_timer				;sets the state to 2(end) when timer hits 0
     cmp byte [state],STATE_PLAY    ;the timer may have ended the game
     jne main_loop					;if state is still play then we continue wrna go back to main
-    cmp byte [key_enter],0			;this is testing. we are jumping to main when enter isnt pressed. but after phase 2
-    je main_loop					;this will be replaced with game logic. so rn when we press enter we go to end state	
-    mov byte [key_enter],0
-    mov byte [state],STATE_ENDED
-    call draw_end_menu
+    call move_gauntlet
+	call spawn_object
+    call update_objects
+    call check_collisions
+    cmp byte [state],STATE_PLAY
+    jne main_loop
+    call draw_gauntlet
     jmp main_loop
 do_ended:
     cmp byte [key_enter],0
     je main_loop
     mov byte [key_enter],0			;if enter is pressed then we go back to play state
     mov byte [state],STATE_PLAY
-    call draw_play_screen
-	call start_round
+    call reset_game
     jmp main_loop
 
 
@@ -383,7 +395,7 @@ show_background:
     ret
 
 ; CX=x, DX=y. Restores the 24x24 area from the hidden background
-erase_sprite:	; will use it when the gauntlet moves in phase 2
+erase_sprite:
     push ax
     push bx
     push cx
@@ -429,12 +441,182 @@ erase_row:
     pop ax
     ret
 	
+; one slot = x, y, type, active (4 words). active = 0 means the slot is free
+; type 0-5 = the six stones (+5,+5,+10,+10,+15,+15), 6-8 = Arc Reactor, Shield, Mjolnir (game over)
+
+; empties every slot (call when a round starts)
+init_objects:
+    push bx
+    mov bx,objects
+io_loop:
+    mov word [bx+6],0
+    add bx,OBJ_SIZE
+    cmp bx,objects_end
+    jb io_loop
+    pop bx
+    ret
+
+; every frame: erase each active object, move it down, draw it.
+; Just above the lava (FALL_LIMIT) it is removed and its slot becomes free
+update_objects:
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    mov bx,objects
+uo_loop:
+    cmp word [bx+6],0
+    je uo_next
+    mov cx,[bx]
+    mov dx,[bx+2]
+    call erase_sprite
+    add dx,FALL_SPEED
+    cmp dx,FALL_LIMIT
+    jbe uo_draw
+    mov word [bx+6],0
+    jmp uo_next
+uo_draw:
+    mov [bx+2],dx
+    mov di,[bx+4]
+    shl di,1
+    mov si,[obj_sprites+di]
+    call draw_sprite
+uo_next:
+    add bx,OBJ_SIZE
+    cmp bx,objects_end
+    jb uo_loop
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    ret
+
+; TEMPORARY STUB so U6 can be tested - Maria's spawn_object (M5) replaces this whole routine.
+; Contract: called once per frame, finds a free slot, sets x, y=12, type, active=1
+spawn_object:
+    push ax
+    push bx
+    push cx
+    push dx
+    inc byte [spawn_wait]
+    cmp byte [spawn_wait],20
+    jb sp_done
+    mov byte [spawn_wait],0
+    mov bx,objects
+sp_find:
+    cmp word [bx+6],0
+    je sp_free
+    add bx,OBJ_SIZE
+    cmp bx,objects_end
+    jb sp_find
+    jmp sp_done
+sp_free:
+    mov ax,[tick]
+    xor dx,dx
+    mov cx,297
+    div cx
+    mov [bx],dx
+    mov word [bx+2],12
+    inc byte [spawn_n]
+    mov al,[spawn_n]
+    xor ah,ah
+    xor dx,dx
+    mov cx,9
+    div cx
+    mov [bx+4],dx
+    mov word [bx+6],1
+sp_done:
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+objects:
+    times OBJ_COUNT dw 0,0,0,0
+objects_end:
+
+obj_sprites:
+    dw sprite_stone_space,sprite_stone_mind,sprite_stone_reality,sprite_stone_power,sprite_stone_time,sprite_stone_soul
+    dw sprite_arc,sprite_shield,sprite_mjolnir
+	
+; for every active object: is it overlapping the gauntlet?
+; Boxes are 24x24, but we count a catch only when they are closer than 20 px both ways,
+; so a near miss on the transparent edge of a sprite does not count
+check_collisions:
+    push ax
+    push bx
+    push cx
+    push dx
+    mov bx,objects
+cc_loop:
+    cmp word [bx+6],0
+    je cc_next
+    mov ax,[bx]            ; |object x - gauntlet x|
+    sub ax,[gauntlet_x]
+    jns cc_x_ok
+    neg ax
+cc_x_ok:
+    cmp ax,COLLIDE_X
+    jae cc_next
+    mov ax,[bx+2]          ; |object y - gauntlet y|
+    sub ax,GAUNTLET_Y
+    jns cc_y_ok
+    neg ax
+cc_y_ok:
+    cmp ax,COLLIDE_Y
+    jae cc_next
+    mov cx,[bx]            ; caught: take the object off the screen and free its slot
+    mov dx,[bx+2]
+    call erase_sprite
+    mov word [bx+6],0
+    mov ax,[bx+4]          ; AX = object type
+    cmp ax,6
+    jae cc_weapon
+    call add_score         ; a stone (type 0-5)
+    jmp cc_next
+cc_weapon:
+    call on_weapon         ; a weapon (type 6-8): game over, stop checking
+    jmp cc_done
+cc_next:
+    add bx,OBJ_SIZE
+    cmp bx,objects_end
+    jb cc_loop
+cc_done:
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+; TEMPORARY STUB - Maria's add_score (M6) replaces this. AX = stone type 0-5
+add_score:
+    push bx
+    mov bx,ax
+    mov al,[stone_points+bx]
+    xor ah,ah
+    add [score],ax
+    call draw_score
+    pop bx
+    ret
+
+stone_points db 5,5,10,10,15,15
+
+; TEMPORARY STUB - Maria's on_weapon (M7) replaces this. AX = weapon type 6-8
+on_weapon:
+    mov byte [end_reason],1
+    mov byte [state],STATE_ENDED
+    call draw_end_menu
+    ret
+	
 draw_gauntlet:
     push cx
     push dx
     push si
     mov si,sprite_gauntlet
-    mov cx,[gauntlet_x]			; variable bcs gauntlet will move horizontally in phase 2
+    mov cx,[gauntlet_x]
     mov dx,GAUNTLET_Y
     call draw_sprite
     pop si
@@ -442,35 +624,44 @@ draw_gauntlet:
     pop cx
     ret
 
+; moves the gauntlet one step if left/right is held
+move_gauntlet:
+    push ax
+    push cx
+    push dx
+    mov ax,[gauntlet_x]
+    cmp byte [key_left],0
+    je mg_no_left
+    sub ax,GAUNTLET_STEP
+    jnc mg_no_left         ; no borrow: still on screen
+    xor ax,ax              ; went below 0: stop at the left wall
+mg_no_left:
+    cmp byte [key_right],0
+    je mg_no_right
+    add ax,GAUNTLET_STEP
+    cmp ax,GAUNTLET_MAX
+    jbe mg_no_right
+    mov ax,GAUNTLET_MAX    ; stop at the right wall
+mg_no_right:
+    cmp ax,[gauntlet_x]
+    je mg_done             ; did not move: nothing to redraw
+    mov cx,[gauntlet_x]
+    mov dx,GAUNTLET_Y
+    call erase_sprite      ; restore the background under the old position
+    mov [gauntlet_x],ax
+    call draw_gauntlet     ; draw at the new position
+mg_done:
+    pop dx
+    pop cx
+    pop ax
+    ret
+
 draw_play_screen:
+	mov word [gauntlet_x],148
     call draw_background
     call draw_gauntlet
-    mov si,sprite_arc          ; 5 points
-    mov cx,40
-    mov dx,40
-    call draw_sprite
-    mov si,sprite_shield       ; 10 points
-    mov cx,140
-    mov dx,70
-    call draw_sprite
-    mov si,sprite_mjolnir      ; 15 points
-    mov cx,230
-    mov dx,50
-    call draw_sprite
-	;stone_sprites is an array with stone addresses stored in it
-	mov si,[stone_sprites]     ; Space stone
-    mov cx,80
-    mov dx,100
-    call draw_sprite
-    mov si,[stone_sprites+6]   ; Power stone
-    mov cx,190
-    mov dx,110
-    call draw_sprite
-    mov si,[stone_sprites+8]   ; Time stone
-    mov cx,265
-    mov dx,115
-    call draw_sprite
-    ret	
+	call init_objects
+    ret
 
 ; draws every rectangle in decor_table (x, y, width, height, colour)
 draw_decor:
@@ -540,10 +731,16 @@ decor_table:
     dw 0,196,320,1,24
     dw 0xFFFF
 	
+reset_game:
+    call draw_play_screen
+    call start_round
+    mov byte [spawn_wait],0
+    ret
+	
 	; sets the clock back to 2:00 and shows it
 start_round:
     mov word [score],0
-    mov byte [end_reason],0		; end_reason is 0 when time up and 1 when catch a stone
+    mov byte [end_reason],0		; end_reason is 0 when time up and 1 when catch an avengers weapon
     mov byte [seconds_left],ROUND_SECONDS
     mov word [tick_acc],0
     call draw_score
@@ -640,7 +837,7 @@ time_label db 'TIME ',0
 %include "gear.asm"
 %include "stones.asm"
 %include "text.asm"
-%include "font.asm"
 %include "screens.asm"
-%include "menus.asm"
 %include "banners.asm"
+%include "font.asm"
+%include "menus.asm"

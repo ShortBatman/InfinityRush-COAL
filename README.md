@@ -2,7 +2,7 @@
 
 # 🧤 INFINITY RUSH
 
-### Catch the power. Dodge the stones. Beat the clock.
+### Catch the stones. Dodge the Avengers. Beat the clock.
 
 A falling-object catching game written entirely in **x86 assembly** — VGA graphics, custom interrupt handlers and hand-drawn pixel art, all in a few kilobytes.
 
@@ -29,7 +29,7 @@ A falling-object catching game written entirely in **x86 assembly** — VGA grap
 
 ## ✨ Overview
 
-**Infinity Rush** is a Marvel-themed catching game built for the *Computer Organization and Assembly Language* (COAL) course at FAST-NUCES. You control the **Infinity Gauntlet** at the bottom of the screen and catch power-ups before the two-minute round runs out — but one wrong catch of an **Infinity Stone** and it's over.
+**Infinity Rush** is a Marvel-themed catching game built for the *Computer Organization and Assembly Language* (COAL) course at FAST-NUCES. You control the **Infinity Gauntlet** at the bottom of the screen and collect the **Infinity Stones** before the two-minute round runs out — but catch one of the Avengers' weapons and it's over.
 
 No libraries, no engine: every pixel, every colour, every keystroke and every tick of the clock is handled by our own assembly code running on the 8088 instruction set.
 
@@ -45,15 +45,15 @@ You have **2 minutes**. Catch as much as you can.
 
 | Item | Points |
 |:---:|:---:|
-| ⚡ **Arc Reactor** | **+5** |
-| 🛡️ **Shield** | **+10** |
-| 🔨 **Mjolnir** | **+15** |
+| 🔵 **Space** and 🟡 **Mind** stones | **+5** |
+| 🔴 **Reality** and 🟣 **Power** stones | **+10** |
+| 🟢 **Time** and 🟠 **Soul** stones | **+15** |
 
 ### Avoid these
 
 | Item | Result |
 |:---:|:---|
-| 💎 **Any Infinity Stone** (Space, Mind, Reality, Power, Time, Soul) | **The Snap — game over** |
+| ⚡ **Arc Reactor**, 🛡️ **Shield**, 🔨 **Mjolnir** | **The Avengers win — game over** |
 
 ### Controls
 
@@ -67,7 +67,7 @@ You have **2 minutes**. Catch as much as you can.
 
 - **Start menu** — title banner, controls, what to catch and what to avoid
 - **Play screen** — night sky with clouds and stars, a lava floor, live timer (`TIME 02:00`) and live score (`SCORE: n`)
-- **End menu** — either **TIME'S UP!** or **THE SNAP!**, with your final score
+- **End menu** — either **TIME'S UP!** or **AVENGERS WIN!**, with your final score
 
 <!--
 Add screenshots here once you have them (press Ctrl+F5 inside DOSBox to capture one),
@@ -116,13 +116,13 @@ Then run it in DOSBox as shown above.
 | File | What it does |
 |:---|:---|
 | `infinity.asm` | **Main program** — setup, main loop and game states, timer and keyboard interrupt handlers, palette, drawing routines (rectangles, sprites, hidden background buffer), clock |
-| `gear.asm` | Pixel-art sprites: the Gauntlet, Arc Reactor, Shield and Mjolnir |
+| `gear.asm` | Pixel-art sprites: the Gauntlet and the Avengers weapons (Arc Reactor, Shield, Mjolnir) |
 | `stones.asm` | The six Infinity Stone sprites and their name tables |
 | `font.asm` | Our own text renderer — draws letters pixel by pixel from the BIOS 8×8 font, with no black box behind them |
 | `text.asm` | Text helpers: print a string, print a number, print centred text |
 | `screens.asm` | Live score display for the HUD |
 | `menus.asm` | The start menu and end menu |
-| `banners.asm` | Large pixel-font title banners (`INFINITY RUSH`, `THE SNAP!`, `TIME'S UP!`) |
+| `banners.asm` | Large pixel-font title banners (`INFINITY RUSH`, `AVENGERS WIN!`, `TIME'S UP!`) |
 | `INFINITY.COM` | Prebuilt game |
 
 ---
@@ -136,7 +136,7 @@ Then run it in DOSBox as shown above.
 flowchart LR
     S([Start menu]) -- Enter --> P([Playing])
     P -- "timer reaches 0:00" --> E([End menu])
-    P -- "Infinity Stone caught (Phase II)" --> E
+    P -- "Avengers weapon caught (Phase II)" --> E
     E -- Enter --> P
     S -- Esc --> Q([DOS])
     P -- Esc --> Q
@@ -196,7 +196,7 @@ The main loop is a small **state machine**: each pass waits for one timer tick, 
 - [ ] Falling objects
 - [ ] Catch detection (collisions)
 - [ ] Real scoring: +5 / +10 / +15
-- [ ] Game over when an Infinity Stone is caught
+- [ ] Game over when an Avengers weapon is caught
 - [ ] Polish and final testing
 
 ---
