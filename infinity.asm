@@ -7,7 +7,17 @@ ROUND_SECONDS equ 120
 seconds_left db 120
 tick_acc dw 0
 GAUNTLET_Y equ 152
+GAUNTLET_STEP equ 6        ; pixels moved per tick
+GAUNTLET_MAX  equ 296      ; 320 - 24, the right wall
 gauntlet_x dw 148
+OBJ_COUNT  equ 6
+OBJ_SIZE   equ 8
+FALL_SPEED equ 2
+FALL_LIMIT equ 152
+spawn_wait db 0
+spawn_n    db 0
+COLLIDE_X  equ 20
+COLLIDE_Y  equ 20
 bg_seg dw 0
 STATE_START equ 0
 STATE_PLAY  equ 1
@@ -19,8 +29,6 @@ COL_LAVA   equ 3
 COL_LAVA2  equ 4
 COL_GROUND equ 5
 COL_WHITE  equ 6
-spr_x   dw 0
-spr_col db 0
 state     db STATE_START
 tick      dw 0
 key_left  db 0
@@ -32,92 +40,98 @@ old9      dd 0
 
 
 start:
-    mov ax,0x0013          ; VGA 320x200, 256 colours
-    int 0x10
-    mov ax,0xA000
+    mov ax,0x0013          
+    int 0x10				;calls the IVT and AH=00 is to select "set video mode" and AL=13 means VGA 320x200, 256 colours
+    mov ax,0xA000			; address of vga memory like 0xb800 is for display memory
     mov es,ax              ; ES = video memory
+    call font_init			; in fonts.asm
     mov ax,cs
-    add ax,0x1000
+    add ax,0x1000			; a 64kb segment is reserved at the top and will be represented by bg_seg
     mov [bg_seg],ax        ; hidden background copy lives here
     call set_palette
     call install_isrs
-    call draw_start_screen
+    call draw_start_menu	;draws the start menu and enters the infinite main_loop
+
+	
 	
 main_loop:
     call wait_tick
-    cmp byte [key_esc],0
-    jne exit
-    cmp byte [state],STATE_START
-    je do_start
+    cmp byte [key_esc],0		;key_esc is 0 until Escape is pressed
+    je esc_not_pressed
+    jmp exit
+esc_not_pressed:
+    cmp byte [state],STATE_START	;both state_start and state_play have been assigned values
+    je do_start						;to which state the game is supposed to jump to, depends on the state variable
     cmp byte [state],STATE_PLAY
     je do_play
-    jmp do_ended
-
+    jmp do_ended					; if state isnt start(0) or play(1) it must be end(2)
 do_start:
     cmp byte [key_enter],0
-    je main_loop
+    je main_loop				;if enter has not been pressed,remain in the main_loop
     mov byte [key_enter],0
-    mov byte [state],STATE_PLAY
-    call draw_play_screen
-	call start_round
-	jmp main_loop
-
+    mov byte [state],STATE_PLAY		;if we are here, that means enter has been pressed and we enter the play state.
+    call reset_game
+	jmp main_loop					;back to the main loop awaiting for further instructions
+									;and this time we will enter play state cus state has been changed to 1
 do_play:
-	call update_timer
-    cmp byte [state],STATE_PLAY    ; the timer may have ended the game
+    call update_timer				;sets the state to 2(end) when timer hits 0
+    cmp byte [state],STATE_PLAY    ;the timer may have ended the game
+    jne main_loop					;if state is still play then we continue wrna go back to main
+    call move_gauntlet
+	call spawn_object
+    call update_objects
+    call check_collisions
+    cmp byte [state],STATE_PLAY
     jne main_loop
-    cmp byte [key_enter],0
-    je main_loop
-    mov byte [key_enter],0
-    mov byte [state],STATE_ENDED
-    call draw_end_screen
+    call draw_gauntlet
     jmp main_loop
-
 do_ended:
     cmp byte [key_enter],0
     je main_loop
-    mov byte [key_enter],0
+    mov byte [key_enter],0			;if enter is pressed then we go back to play state
     mov byte [state],STATE_PLAY
-    call draw_play_screen
-	call start_round
+    call reset_game
     jmp main_loop
+
+
 
 fill_screen:               ; AL = colour
     xor di,di
-    mov ah,al
-    mov cx,32000
-    cld
+    mov ah,al				; Ah and Al both have the same color now. so the screen is filled with the same color
+    mov cx,32000			;320 × 200 = 64,000 px
+    cld						;64,000 ÷ 2 = 32,000 cells for stosw
     rep stosw
     ret
 
 exit:
     call restore_isrs
-    mov ax,0x0003          ; back to text mode
-    int 10h
-    mov ax,0x4C00
+    mov ax,0x0003          ;back to text mode from video mode
+    int 10h					;reset the 0x0013 we did at the start
+    mov ax,0x4c00
     int 21h
 
+	;this loop is necessary to maintain a uniform speed of updates. wrna cpu unlimited speed k sath apni mrzi sy screen update krta jaega
 wait_tick:
     mov ax,[tick]
 wait_loop:
-    cmp ax,[tick]
-    je wait_loop
+    cmp ax,[tick]		;tick will change when the timer int fires (in isr_timer). Until then, it is in a loop
+    je wait_loop		;a tick is fired (tick is inc) 1/18.2 of a second automatically by INT 8
     ret
 	
-install_isrs:
+install_isrs:				;hooking interrupts
     push es
     xor ax,ax
-    mov es,ax              ; ES = interrupt vector table
-    cli
-    mov ax,[es:8*4]
+    mov es,ax               ;ES = interrupt vector table
+    cli						;no interrupts will fire till we're done hooking em 
+    mov ax,[es:8*4]			
     mov [old8],ax
-    mov ax,[es:8*4+2]
+    mov ax,[es:8*4+2]		;saving old ints
     mov [old8+2],ax
     mov ax,[es:9*4]
     mov [old9],ax
     mov ax,[es:9*4+2]
     mov [old9+2],ax
-    mov word [es:8*4],isr_timer
+    mov word [es:8*4],isr_timer			;pushing our ints in their place
     mov [es:8*4+2],cs
     mov word [es:9*4],isr_keyboard
     mov [es:9*4+2],cs
@@ -143,20 +157,20 @@ restore_isrs:
     ret
 
 isr_timer:
-    inc word [cs:tick]
-    jmp far [cs:old8]
+    inc word [cs:tick]		;increments the tick variable each time INT 8(timer) is fired. cs seg cus it is a variable in our code segment
+    jmp far [cs:old8]		; we use far bcs we are moving bw segments, back to the original old timer interrupt
 
 isr_keyboard:
     push ax
-    in al,0x60             ; scancode
-    mov ah,1
-    test al,0x80           ; bit 7 set = key released
-    jz key_pressed
-    xor ah,ah
+    in al,0x60             ; scancode. al now has the key pressed (e.g: 4Bh)
+    mov ah,1				; assume key is pressed
+    test al,0x80           ; when the key is released, bit 7 is set of the same number.
+    jz key_pressed			; if al = 0x80, yaani bit 7 is set. then keep ah = 1 
+    xor ah,ah				; otherwise ah = 0, not pressed at all 
 key_pressed:
-    and al,0x7F
+    and al,0x7F				;clears bit 7 
     cmp al,0x4B            ; Left
-    jne skip_left
+    jne skip_left			;if the key in al is left key, then move whatever ah is in key_left (0 if not pressed, 1 if pressed)
     mov [cs:key_left],ah
 skip_left:
     cmp al,0x4D            ; Right
@@ -172,12 +186,12 @@ skip_enter:
     mov [cs:key_esc],ah
 skip_esc:
     in al,0x61             ; acknowledge keyboard
-    mov ah,al
-    or al,0x80
-    out 0x61,al
+    mov ah,al				;copy the original 0x61 into ah
+    or al,0x80				; setting the bit 7
+    out 0x61,al				; setting the bit 7 in the 0x61 tells the keyboard controller k han hum ny key receive kr li hai
     mov al,ah
-    out 0x61,al
-    mov al,0x20            ; end of interrupt
+    out 0x61,al				; copying the original value back to 0x61 to tell the controller k ab aglay input k liye ready ho jao
+    mov al,0x20            ; end of interrupt (same for every int)
     out 0x20,al
     pop ax
     iret
@@ -185,18 +199,19 @@ skip_esc:
 set_palette:
     mov dx,0x3C8
     xor al,al
-    out dx,al              ; start at colour 0
-    inc dx                 ; DX = 0x3C9
+    out dx,al              ; tells the port 3C9 to get ready im abt to give you colors starting from al(color # 0)
+    inc dx                 ; dx = 0x3C9
     mov si,palette_data
     mov cx,PALETTE_BYTES
 palette_loop:
-    lodsb
-    out dx,al
+    lodsb					;moves color si to al and si++
+    out dx,al				;moves al to 3C9 (aka the palette data port)
     loop palette_loop
     ret
 
 ; one line per colour: red, green, blue (each 0-63)
 palette_data:
+	; R, G, B
     db 0,0,0        ; 0  black (transparent in sprites)
     db 6,6,16       ; 1  HUD navy
     db 31,41,63     ; 2  sky
@@ -217,23 +232,23 @@ palette_data:
     db 42,20,62     ; 17 purple
     db 8,50,16      ; 18 green
     db 62,36,4      ; 19 orange
-	db 10,8,14      ; 20 outline
+    db 10,8,14      ; 20 outline
     db 63,58,25     ; 21 light gold
     db 35,60,63     ; 22 light cyan
     db 52,54,58     ; 23 light grey
     db 24,26,30     ; 24 dark grey
     db 46,26,8      ; 25 light brown
     db 63,34,34     ; 26 light red
-	db 63,50,10     ; 27 bright lava
+    db 63,50,10     ; 27 bright lava
     db 36,8,2       ; 28 deep red
-	db 18,24,52     ; 29 sky 1
+    db 18,24,52     ; 29 sky 1
     db 26,32,60     ; 30 sky 2
     db 34,42,63     ; 31 sky 3
     db 44,52,63     ; 32 sky 4
     db 63,52,48     ; 33 horizon glow
     db 60,62,63     ; 34 cloud
     db 48,54,63     ; 35 cloud shade
-	db 30,48,63     ; 36 space light
+    db 30,48,63     ; 36 space light
     db 63,62,30     ; 37 mind light
     db 63,38,38     ; 38 reality light
     db 54,40,63     ; 39 power light
@@ -255,19 +270,19 @@ fill_rect:
     push dx
     push si
     push di
-    mov bx,di              ; BX = rows left
-    mov ah,al              ; park the colour in AH
-    push cx                ; save x
-    mov di,dx
+    mov bx,di              ; bx now stores the no. of rows left
+    mov ah,al              ; temporarily store the colour(al) in ah
+    push cx                ; save x coordinate
+    mov di,dx			   ; di has the y-coordinate
     mov cl,8
     shl di,cl              ; y*256
     mov cl,6
     shl dx,cl              ; y*64
-    add di,dx              ; y*320
+    add di,dx              ; y*256 + y*64 = y*320
     pop cx
-    add di,cx              ; + x
-    mov al,ah
-    mov dx,si              ; DX = width
+    add di,cx              ; (x,y) in VGA = y*320 + x
+    mov al,ah				; color goes back in al
+    mov dx,si              ; dx has the width
     cld
 fill_row:
     mov cx,dx
@@ -288,10 +303,10 @@ fill_row:
 draw_background:
     push es
     mov ax,[bg_seg]
-    mov es,ax              ; draw into the hidden copy
+    mov es,ax              ; now everything we draw below goes to the hidden bg copy
     xor cx,cx
     xor dx,dx
-    mov si,320
+    mov si,320				; setting the parameters up for fill_rect
     mov di,10
     mov al,COL_HUD
     call fill_rect         ; HUD bar
@@ -307,14 +322,13 @@ draw_background:
     mov di,8
     mov al,COL_GROUND
     call fill_rect         ; ground
-    call draw_decor
+    call draw_decor			;adds details to the basic rectangles we just drew
     pop es
-    call show_background   ; copy it to the screen
+    call show_background   ; copy it from the hidden bg to the screen
     ret
 	
-; SI=sprite (9 bytes), CX=x, DX=y. Colour 0 = transparent
-; SI=sprite (24x24 bytes), CX=x, DX=y. Colour 0 = transparent
-draw_sprite:
+
+draw_sprite:	; same as fill rect
     push ax
     push bx
     push cx
@@ -327,24 +341,24 @@ draw_sprite:
     shl di,cl              ; y*256
     mov cl,6
     shl dx,cl              ; y*64
-    add di,dx              ; y*320
+    add di,dx              ; y*64 + y*256 = y*320
     pop cx
-    add di,cx              ; + x
+    add di,cx              ; (x,y) = y*320 + x
     cld
-    mov bx,24              ; 24 rows
+    mov bx,24              ; 24 rows left
 sprite_row:
     push di
     mov cx,24              ; 24 pixels per row
-sprite_px:
+sprite_px:				;draws the sprite
     lodsb
-    cmp al,0
+    cmp al,0				;al = 0 means transparent color. so if it is transparent, we skip coloring and bg remains visible
     je sprite_next         ; transparent, skip
-    mov [es:di],al
+    mov [es:di],al			; if not transparent, color the pixel
 sprite_next:
     inc di
-    loop sprite_px
+    loop sprite_px			;loops till the row(24px) is complete
     pop di
-    add di,320             ; next screen row
+    add di,320             ; on to the next row
     dec bx
     jnz sprite_row
     pop di
@@ -363,7 +377,7 @@ show_background:
     push di
     push ds
     push es
-    mov ax,0xA000
+    mov ax,0xA000		;screen ka segment
     mov es,ax
     mov ax,[bg_seg]
     mov ds,ax
@@ -427,6 +441,176 @@ erase_row:
     pop ax
     ret
 	
+; one slot = x, y, type, active (4 words). active = 0 means the slot is free
+; type 0-5 = the six stones (+5,+5,+10,+10,+15,+15), 6-8 = Arc Reactor, Shield, Mjolnir (game over)
+
+; empties every slot (call when a round starts)
+init_objects:
+    push bx
+    mov bx,objects
+io_loop:
+    mov word [bx+6],0
+    add bx,OBJ_SIZE
+    cmp bx,objects_end
+    jb io_loop
+    pop bx
+    ret
+
+; every frame: erase each active object, move it down, draw it.
+; Just above the lava (FALL_LIMIT) it is removed and its slot becomes free
+update_objects:
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    mov bx,objects
+uo_loop:
+    cmp word [bx+6],0
+    je uo_next
+    mov cx,[bx]
+    mov dx,[bx+2]
+    call erase_sprite
+    add dx,FALL_SPEED
+    cmp dx,FALL_LIMIT
+    jbe uo_draw
+    mov word [bx+6],0
+    jmp uo_next
+uo_draw:
+    mov [bx+2],dx
+    mov di,[bx+4]
+    shl di,1
+    mov si,[obj_sprites+di]
+    call draw_sprite
+uo_next:
+    add bx,OBJ_SIZE
+    cmp bx,objects_end
+    jb uo_loop
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    ret
+
+; TEMPORARY STUB so U6 can be tested - Maria's spawn_object (M5) replaces this whole routine.
+; Contract: called once per frame, finds a free slot, sets x, y=12, type, active=1
+spawn_object:
+    push ax
+    push bx
+    push cx
+    push dx
+    inc byte [spawn_wait]
+    cmp byte [spawn_wait],20
+    jb sp_done
+    mov byte [spawn_wait],0
+    mov bx,objects
+sp_find:
+    cmp word [bx+6],0
+    je sp_free
+    add bx,OBJ_SIZE
+    cmp bx,objects_end
+    jb sp_find
+    jmp sp_done
+sp_free:
+    mov ax,[tick]
+    xor dx,dx
+    mov cx,297
+    div cx
+    mov [bx],dx
+    mov word [bx+2],12
+    inc byte [spawn_n]
+    mov al,[spawn_n]
+    xor ah,ah
+    xor dx,dx
+    mov cx,9
+    div cx
+    mov [bx+4],dx
+    mov word [bx+6],1
+sp_done:
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+objects:
+    times OBJ_COUNT dw 0,0,0,0
+objects_end:
+
+obj_sprites:
+    dw sprite_stone_space,sprite_stone_mind,sprite_stone_reality,sprite_stone_power,sprite_stone_time,sprite_stone_soul
+    dw sprite_arc,sprite_shield,sprite_mjolnir
+	
+; for every active object: is it overlapping the gauntlet?
+; Boxes are 24x24, but we count a catch only when they are closer than 20 px both ways,
+; so a near miss on the transparent edge of a sprite does not count
+check_collisions:
+    push ax
+    push bx
+    push cx
+    push dx
+    mov bx,objects
+cc_loop:
+    cmp word [bx+6],0
+    je cc_next
+    mov ax,[bx]            ; |object x - gauntlet x|
+    sub ax,[gauntlet_x]
+    jns cc_x_ok
+    neg ax
+cc_x_ok:
+    cmp ax,COLLIDE_X
+    jae cc_next
+    mov ax,[bx+2]          ; |object y - gauntlet y|
+    sub ax,GAUNTLET_Y
+    jns cc_y_ok
+    neg ax
+cc_y_ok:
+    cmp ax,COLLIDE_Y
+    jae cc_next
+    mov cx,[bx]            ; caught: take the object off the screen and free its slot
+    mov dx,[bx+2]
+    call erase_sprite
+    mov word [bx+6],0
+    mov ax,[bx+4]          ; AX = object type
+    cmp ax,6
+    jae cc_weapon
+    call add_score         ; a stone (type 0-5)
+    jmp cc_next
+cc_weapon:
+    call on_weapon         ; a weapon (type 6-8): game over, stop checking
+    jmp cc_done
+cc_next:
+    add bx,OBJ_SIZE
+    cmp bx,objects_end
+    jb cc_loop
+cc_done:
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+; TEMPORARY STUB - Maria's add_score (M6) replaces this. AX = stone type 0-5
+add_score:
+    push bx
+    mov bx,ax
+    mov al,[stone_points+bx]
+    xor ah,ah
+    add [score],ax
+    call draw_score
+    pop bx
+    ret
+
+stone_points db 5,5,10,10,15,15
+
+; TEMPORARY STUB - Maria's on_weapon (M7) replaces this. AX = weapon type 6-8
+on_weapon:
+    mov byte [end_reason],1
+    mov byte [state],STATE_ENDED
+    call draw_end_menu
+    ret
+	
 draw_gauntlet:
     push cx
     push dx
@@ -440,34 +624,44 @@ draw_gauntlet:
     pop cx
     ret
 
+; moves the gauntlet one step if left/right is held
+move_gauntlet:
+    push ax
+    push cx
+    push dx
+    mov ax,[gauntlet_x]
+    cmp byte [key_left],0
+    je mg_no_left
+    sub ax,GAUNTLET_STEP
+    jnc mg_no_left         ; no borrow: still on screen
+    xor ax,ax              ; went below 0: stop at the left wall
+mg_no_left:
+    cmp byte [key_right],0
+    je mg_no_right
+    add ax,GAUNTLET_STEP
+    cmp ax,GAUNTLET_MAX
+    jbe mg_no_right
+    mov ax,GAUNTLET_MAX    ; stop at the right wall
+mg_no_right:
+    cmp ax,[gauntlet_x]
+    je mg_done             ; did not move: nothing to redraw
+    mov cx,[gauntlet_x]
+    mov dx,GAUNTLET_Y
+    call erase_sprite      ; restore the background under the old position
+    mov [gauntlet_x],ax
+    call draw_gauntlet     ; draw at the new position
+mg_done:
+    pop dx
+    pop cx
+    pop ax
+    ret
+
 draw_play_screen:
+	mov word [gauntlet_x],148
     call draw_background
     call draw_gauntlet
-    mov si,sprite_arc          ; 5 points
-    mov cx,40
-    mov dx,40
-    call draw_sprite
-    mov si,sprite_shield       ; 10 points
-    mov cx,140
-    mov dx,70
-    call draw_sprite
-    mov si,sprite_mjolnir      ; 15 points
-    mov cx,230
-    mov dx,50
-    call draw_sprite
-	mov si,[stone_sprites]     ; Space stone
-    mov cx,80
-    mov dx,100
-    call draw_sprite
-    mov si,[stone_sprites+6]   ; Power stone
-    mov cx,190
-    mov dx,110
-    call draw_sprite
-    mov si,[stone_sprites+8]   ; Time stone
-    mov cx,265
-    mov dx,115
-    call draw_sprite
-    ret	
+	call init_objects
+    ret
 
 ; draws every rectangle in decor_table (x, y, width, height, colour)
 draw_decor:
@@ -476,17 +670,18 @@ decor_loop:
     mov cx,[bx]
     cmp cx,0xFFFF          ; end marker
     je decor_done
-    mov dx,[bx+2]
+    mov dx,[bx+2]		; preparing parameters for fill_rect
     mov si,[bx+4]
     mov di,[bx+6]
     mov ax,[bx+8]          ; colour ends up in AL
     call fill_rect
-    add bx,10
+    add bx,10				; next line in the decor_table
     jmp decor_loop
 decor_done:
     ret
 
 decor_table:
+	;  x,y,width,height,color
     dw 0,10,320,30,29      ; sky bands, dark at the top
     dw 0,40,320,40,30
     dw 0,80,320,40,31
@@ -536,10 +731,16 @@ decor_table:
     dw 0,196,320,1,24
     dw 0xFFFF
 	
+reset_game:
+    call draw_play_screen
+    call start_round
+    mov byte [spawn_wait],0
+    ret
+	
 	; sets the clock back to 2:00 and shows it
 start_round:
     mov word [score],0
-    mov byte [end_reason],0
+    mov byte [end_reason],0		; end_reason is 0 when time up and 1 when catch an avengers weapon
     mov byte [seconds_left],ROUND_SECONDS
     mov word [tick_acc],0
     call draw_score
@@ -548,16 +749,16 @@ start_round:
 
 ; called once per game step. 10 per tick, 182 = one second (18.2 ticks/s)
 update_timer:
-    add word [tick_acc],10
-    cmp word [tick_acc],182
+    add word [tick_acc],10			;update timer runs about 18.2 times a second
+    cmp word [tick_acc],182			;hence 10*18.2 = 182 in a second
     jb timer_done
     sub word [tick_acc],182
     dec byte [seconds_left]
-    call draw_time
+    call draw_time					;redraws the clock
     cmp byte [seconds_left],0
     jne timer_done
     mov byte [state],STATE_ENDED   ; time's up
-    call draw_end_screen
+    call draw_end_menu
 timer_done:
     ret
 
@@ -569,29 +770,26 @@ draw_time:
     push dx
     push si
     push di
-    xor cx,cx
+    xor cx,cx		;parameters for fill_rect
     xor dx,dx
     mov si,88
     mov di,9
     mov al,COL_HUD
     call fill_rect         ; clear the old time
-    mov ah,2
-    xor bh,bh
-    xor dx,dx
-    int 0x10               ; cursor to top-left
-    mov si,time_label
+    mov byte [put_col],0   	; put_col font.asm mein aik variable hai which rmmbrs which col to draw the next char in
+    mov si,time_label		;time_label = "TIME "
     call put_str
     mov al,[seconds_left]
     xor ah,ah
     mov bl,60
-    div bl                 ; AL = minutes, AH = seconds
+    div bl                 ; this division results in al = mins, ah = secs. result in al, remainder in ah.
     push ax
-    call put_two
+    call put_two			;prints al(mins)
     mov al,':'
     call put_char
     pop ax
     mov al,ah
-    call put_two
+    call put_two			;prints al(secs)
     pop di
     pop si
     pop dx
@@ -602,19 +800,19 @@ draw_time:
 
 put_str:                   ; SI = zero-terminated text
     lodsb
-    cmp al,0
+    cmp al,0				; will loading from si to al till al hits a 0 (null terminator)
     je put_str_done
-    call put_char
+    call put_char			;print char
     jmp put_str
 put_str_done:
     ret
 
 put_two:                   ; AL = 0..99, printed as two digits
     xor ah,ah
-    mov bl,10
-    div bl
+    mov bl,10				;this division results in al=1st digit and ah=2nd digit
+    div bl					;e.g: 59/10 => remainder = 9(ah) and result = 5(al) 
     push ax
-    add al,'0'
+    add al,'0'				;to convert 5 into '5' we add '0' (int to string).
     call put_char
     pop ax
     mov al,ah
@@ -622,12 +820,15 @@ put_two:                   ; AL = 0..99, printed as two digits
     call put_char
     ret
 
-put_char:                  ; AL = character
+put_char:                  ; AL = character, drawn in the HUD at the next column
     push bx
-    mov ah,0x0E
-    xor bh,bh
-    mov bl,COL_WHITE
-    int 0x10
+    push dx
+    mov dh,0				;text row
+    mov dl,[put_col]		;text col
+    mov bl,COL_WHITE		;text color
+    call draw_char			;in font.asm
+    inc byte [put_col]
+    pop dx
     pop bx
     ret
 
@@ -637,3 +838,6 @@ time_label db 'TIME ',0
 %include "stones.asm"
 %include "text.asm"
 %include "screens.asm"
+%include "banners.asm"
+%include "font.asm"
+%include "menus.asm"
