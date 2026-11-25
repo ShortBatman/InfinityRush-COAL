@@ -626,18 +626,23 @@ cc_done:
     pop ax
     ret
 
-; TEMPORARY STUB - Maria's add_score (M6) replaces this. AX = stone type 0-5
+; AX = stone type 0..5. Adds 5/10/15 to the score and redraws it
 add_score:
+    push ax
     push bx
     mov bx,ax
+    cmp bx,5
+    ja as_done              ; not a stone: ignore
     mov al,[stone_points+bx]
-    xor ah,ah
+    xor ah,ah               ; AX = points for this type
     add [score],ax
-    call draw_score
+    call draw_score         ; update the top-right score now
+as_done:
     pop bx
+    pop ax
     ret
 
-stone_points db 5,5,10,10,15,15
+stone_points db 5,5,10,10,15,15   ; Space, Mind, Reality, Power, Time, Soul
 
 ; TEMPORARY STUB - Maria's on_weapon (M7) replaces this. AX = weapon type 6-8
 on_weapon:
