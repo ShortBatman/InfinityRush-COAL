@@ -642,7 +642,8 @@ as_done:
     pop ax
     ret
 
-stone_points db 5,5,10,10,15,15   ; Space, Mind, Reality, Power, Time, Soul
+stone_points db 5,5,10,10,15,15   
+; Space, Mind, Reality, Power, Time, Soul
 
 ; AX = weapon type 6..8. Ends the game and shows which weapon was hit
 on_weapon:
@@ -675,7 +676,7 @@ weapon_name_ptrs: dw weapon_name_arc,weapon_name_shield,weapon_name_mjolnir
 weapon_name_arc:     db 'THE ARC REACTOR',0
 weapon_name_shield:  db 'THE SHIELD',0
 weapon_name_mjolnir: db 'MJOLNIR',0
-	
+
 draw_gauntlet:
     push cx
     push dx
@@ -799,7 +800,7 @@ decor_table:
 reset_game:
     call draw_play_screen
     call start_round
-    call seed_rand         
+    call seed_rand
     mov byte [spawn_wait],0
     ret
 	
