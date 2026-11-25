@@ -799,6 +799,7 @@ decor_table:
 reset_game:
     call draw_play_screen
     call start_round
+    call seed_rand         
     mov byte [spawn_wait],0
     ret
 	
