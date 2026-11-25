@@ -493,41 +493,76 @@ uo_next:
     pop bx
     ret
 
-; TEMPORARY STUB so U6 can be tested - Maria's spawn_object (M5) replaces this whole routine.
-; Contract: called once per frame, finds a free slot, sets x, y=12, type, active=1
+SPAWN_DELAY equ 20          ; frames between spawns (about 1.1 s)
+
+rand_seed dw 1
+
+; seeds the generator from the timer tick (called by reset_game)
+seed_rand:
+    push ax
+    mov ax,[tick]
+    mov [rand_seed],ax
+    pop ax
+    ret
+
+; returns AX = pseudo-random 0..65535 (16-bit LCG: seed = seed*25173 + 13849)
+rand:
+    push dx
+    mov ax,[rand_seed]
+    mov dx,25173
+    mul dx                  ; DX:AX = AX*25173, we keep the low word in AX
+    add ax,13849
+    mov [rand_seed],ax
+    xor al,ah               ; mix high byte into low byte (low bits of an LCG are weak)
+    pop dx
+    ret
+
+; called once per frame: after SPAWN_DELAY frames, put one new object at the top
 spawn_object:
     push ax
     push bx
     push cx
     push dx
     inc byte [spawn_wait]
-    cmp byte [spawn_wait],20
-    jb sp_done
-    mov byte [spawn_wait],0
+    cmp byte [spawn_wait],SPAWN_DELAY
+    jb so_done              ; not due yet
+    mov byte [spawn_wait],0 ; due: restart the cooldown
     mov bx,objects
-sp_find:
-    cmp word [bx+6],0
-    je sp_free
+so_find:
+    cmp word [bx+6],0       ; active = 0 means free
+    je so_free
     add bx,OBJ_SIZE
     cmp bx,objects_end
-    jb sp_find
-    jmp sp_done
-sp_free:
-    mov ax,[tick]
+    jb so_find
+    jmp so_done             ; no free slot: do nothing
+so_free:
+    call rand               ; x = random 0..296
     xor dx,dx
     mov cx,297
-    div cx
+    div cx                  ; remainder in DX
     mov [bx],dx
-    mov word [bx+2],12
-    inc byte [spawn_n]
-    mov al,[spawn_n]
-    xor ah,ah
+    mov word [bx+2],12      ; y = 12
+    call rand               ; roll 0..99
     xor dx,dx
-    mov cx,9
+    mov cx,100
     div cx
+    cmp dx,75
+    jae so_weapon           ; 75..99 (25%) = weapon
+    call rand               ; stone: type = random 0..5
+    xor dx,dx
+    mov cx,6
+    div cx
+    jmp so_type
+so_weapon:
+    call rand               ; weapon: type = 6 + random 0..2
+    xor dx,dx
+    mov cx,3
+    div cx
+    add dx,6
+so_type:
     mov [bx+4],dx
-    mov word [bx+6],1
-sp_done:
+    mov word [bx+6],1       ; slot is now active
+so_done:
     pop dx
     pop cx
     pop bx
@@ -591,26 +626,57 @@ cc_done:
     pop ax
     ret
 
-; TEMPORARY STUB - Maria's add_score (M6) replaces this. AX = stone type 0-5
+; AX = stone type 0..5. Adds 5/10/15 to the score and redraws it
 add_score:
+    push ax
     push bx
     mov bx,ax
+    cmp bx,5
+    ja as_done              ; not a stone: ignore
     mov al,[stone_points+bx]
-    xor ah,ah
+    xor ah,ah               ; AX = points for this type
     add [score],ax
-    call draw_score
+    call draw_score         ; update the top-right score now
+as_done:
     pop bx
+    pop ax
     ret
 
-stone_points db 5,5,10,10,15,15
+stone_points db 5,5,10,10,15,15   
+; Space, Mind, Reality, Power, Time, Soul
 
-; TEMPORARY STUB - Maria's on_weapon (M7) replaces this. AX = weapon type 6-8
+; AX = weapon type 6..8. Ends the game and shows which weapon was hit
 on_weapon:
-    mov byte [end_reason],1
+    push ax
+    push bx
+    push dx
+    push si
+    mov bx,ax               ; keep the type, draw_end_menu does not need AX
+    mov byte [end_reason],1 ; 1 = hit an Avengers weapon
     mov byte [state],STATE_ENDED
-    call draw_end_menu
+    call draw_end_menu      ; draws the whole end screen (menus.asm)
+    cmp bx,6
+    jb ow_done
+    cmp bx,8
+    ja ow_done
+    sub bx,6                ; 0..2
+    shl bx,1                ; word table: 2 bytes per entry
+    mov si,[weapon_name_ptrs+bx]
+    mov dh,9                ; row 9: between the caught line and the score box
+    mov bl,6                ; white
+    call print_str_center
+ow_done:
+    pop si
+    pop dx
+    pop bx
+    pop ax
     ret
-	
+
+weapon_name_ptrs: dw weapon_name_arc,weapon_name_shield,weapon_name_mjolnir
+weapon_name_arc:     db 'THE ARC REACTOR',0
+weapon_name_shield:  db 'THE SHIELD',0
+weapon_name_mjolnir: db 'MJOLNIR',0
+
 draw_gauntlet:
     push cx
     push dx
@@ -734,6 +800,7 @@ decor_table:
 reset_game:
     call draw_play_screen
     call start_round
+    call seed_rand
     mov byte [spawn_wait],0
     ret
 	
