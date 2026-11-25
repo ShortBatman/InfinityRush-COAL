@@ -1,34 +1,28 @@
-; task M1
 
-print_str:
+
+
+
+
+print_str:                  ; SI = string, DH = row, DL = column, BL = colour
     push ax
-    push bx
     push dx
     push si
-
-    mov bh, 0               
-    mov ah, 02h             
-    int 10h
-
 print_str_loop:
-    cmp dl, 40              
+    cmp dl, 40					;dl = 40 means end of screen so we stop
     jae print_str_done
-    lodsb                 
-    cmp al, 0               
+    lodsb
+    cmp al, 0
     je print_str_done
-    mov ah, 0Eh             
-    int 10h
-    inc dl                 
+    call draw_char          ; draws only the letter's pixels (see font.asm)
+    inc dl
     jmp print_str_loop
-
 print_str_done:
     pop si
     pop dx
-    pop bx
     pop ax
     ret
 
-
+; ax has the number that is to be printed
 print_num:
     push ax
     push bx
@@ -54,7 +48,7 @@ print_num_digit:
     xor dx, dx              
     div cx                 
     add dl, '0'            
-    mov [di], dl            
+    mov [di], dl   ;print_num_buf + di = '*the digit we just separated*'          
     dec di                  
     cmp ax, 0
     jne print_num_digit     
@@ -71,7 +65,7 @@ print_num_digit:
     pop ax
     ret
 
-print_num_buf:  db '     ', 0     
+print_num_buf:  db '     ', 0     ; the buffer
 
 
 print_str_center:
@@ -79,27 +73,27 @@ print_str_center:
     push dx
     push di
 
-    mov di, si            
+    mov di, si            ;now both di and si point to the start of the text
     xor ax, ax            
 
 print_str_center_len:
     cmp byte [di], 0
     je print_str_center_calc
     inc di
-    inc ax
+    inc ax					;ax will store the length of the string
     jmp print_str_center_len
 
 print_str_center_calc:
     cmp ax, 40
     jb print_str_center_fits
-    mov dl, 0              
-    jmp print_str_center_go
+    mov dl, 0              		;if string size is bigger than the screen, yaani it cant fit in the centre.
+    jmp print_str_center_go		;it'll simply print from the start of the row
 
 print_str_center_fits:
-    mov dl, 40
-    sub dl, al           
-    shr dl, 1             
-
+    mov dl, 40					;dl=total cols on screen=40
+    sub dl, al           		; dl = total - textlength	e.g: textlen is 20: dl=40-20=20
+    shr dl, 1             		; dl = dl/2						 dl = dl/2 = 10
+	; now dl points at the address which will centre align the text
 print_str_center_go:
     call print_str          
 
