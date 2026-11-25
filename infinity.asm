@@ -644,12 +644,37 @@ as_done:
 
 stone_points db 5,5,10,10,15,15   ; Space, Mind, Reality, Power, Time, Soul
 
-; TEMPORARY STUB - Maria's on_weapon (M7) replaces this. AX = weapon type 6-8
+; AX = weapon type 6..8. Ends the game and shows which weapon was hit
 on_weapon:
-    mov byte [end_reason],1
+    push ax
+    push bx
+    push dx
+    push si
+    mov bx,ax               ; keep the type, draw_end_menu does not need AX
+    mov byte [end_reason],1 ; 1 = hit an Avengers weapon
     mov byte [state],STATE_ENDED
-    call draw_end_menu
+    call draw_end_menu      ; draws the whole end screen (menus.asm)
+    cmp bx,6
+    jb ow_done
+    cmp bx,8
+    ja ow_done
+    sub bx,6                ; 0..2
+    shl bx,1                ; word table: 2 bytes per entry
+    mov si,[weapon_name_ptrs+bx]
+    mov dh,9                ; row 9: between the caught line and the score box
+    mov bl,6                ; white
+    call print_str_center
+ow_done:
+    pop si
+    pop dx
+    pop bx
+    pop ax
     ret
+
+weapon_name_ptrs: dw weapon_name_arc,weapon_name_shield,weapon_name_mjolnir
+weapon_name_arc:     db 'THE ARC REACTOR',0
+weapon_name_shield:  db 'THE SHIELD',0
+weapon_name_mjolnir: db 'MJOLNIR',0
 	
 draw_gauntlet:
     push cx
